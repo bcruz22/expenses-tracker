@@ -1,0 +1,20 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Local exports (test files you might create while trying out import/export)
+recurring-expenses-*.csv
+recurring-expenses-*.json
+recurring-expenses-*.enc.json
+
+# Logs
+*.log
