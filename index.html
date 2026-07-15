@@ -1,0 +1,1850 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Recurring Expenses Tracker</title>
+
+<!-- iOS/iPadOS home screen install support -->
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#00274C">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Expenses">
+<link rel="apple-touch-icon" sizes="180x180" href="icon-180.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+<style>
+  /* Dark theme (default, on-brand U-M Blue) — applied when the user's system
+     is dark, or when [data-theme="dark"] is set explicitly. */
+  :root, :root[data-theme="dark"] {
+    --bg: #00274C;
+    --surface: #0A3155;
+    --surface-2: #123C63;
+    --border: #1F4C74;
+    --text: #FFFFFF;
+    --text-muted: #A9BFD4;
+    --text-faint: #6E8AA8;
+    --accent: #FFCB05;
+    --accent-text: #00274C;
+    --danger: #9A3324;
+    --toast-bg: #123C63;
+    --scheme: dark;
+
+    --cat-streaming: #00B2A9;
+    --cat-software: #702082;
+    --cat-utilities: #D86018;
+    --cat-fitness: #E01F7C;
+    --cat-subscriptions: #A5A508;
+    --cat-other: #989C97;
+  }
+
+  /* Light theme — applied when the user's system is light AND they haven't
+     manually forced a theme, or when [data-theme="light"] is set. Palette
+     inverts to white background with U-M Blue text; Maize keeps its accent
+     role but pairs with Blue text for legibility per U-M brand guidance. */
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) {
+      --bg: #FFFFFF;
+      --surface: #F5F7FA;
+      --surface-2: #EBEFF5;
+      --border: #D3DCE8;
+      --text: #00274C;
+      --text-muted: #5A6B85;
+      --text-faint: #667289;
+      --accent: #FFCB05;
+      --accent-text: #00274C;
+      --danger: #9A3324;
+      --toast-bg: #00274C;
+      --scheme: light;
+    }
+  }
+
+  :root[data-theme="light"] {
+    --bg: #FFFFFF;
+    --surface: #F5F7FA;
+    --surface-2: #EBEFF5;
+    --border: #D3DCE8;
+    --text: #00274C;
+    --text-muted: #5A6B85;
+    --text-faint: #667289;
+    --accent: #FFCB05;
+    --accent-text: #00274C;
+    --danger: #9A3324;
+    --toast-bg: #00274C;
+    --scheme: light;
+  }
+
+  * { box-sizing: border-box; }
+
+  html { --radius: 10px; }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; animation: none !important; }
+  }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    line-height: 1.5;
+    padding: calc(32px + env(safe-area-inset-top)) 20px calc(80px + env(safe-area-inset-bottom));
+  }
+
+  .wrap { max-width: 760px; margin: 0 auto; }
+
+  .eyebrow {
+    font-size: 12px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+    font-weight: 600;
+    margin: 0 0 4px;
+  }
+
+  h1 {
+    font-size: 22px;
+    font-weight: 600;
+    margin: 0 0 28px;
+    color: var(--text);
+  }
+
+  .num {
+    font-family: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Ticker / summary */
+  .ticker {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 24px 24px 20px;
+    margin-bottom: 24px;
+  }
+
+  .ticker-main {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    margin-bottom: 4px;
+  }
+
+  .ticker-main .num {
+    font-size: 40px;
+    font-weight: 600;
+    color: var(--accent);
+  }
+
+  .ticker-main .label {
+    font-size: 13px;
+    color: var(--text-muted);
+  }
+
+  .ticker-sub {
+    font-size: 13px;
+    color: var(--text-muted);
+    margin-bottom: 18px;
+  }
+
+  .ticker-sub .num { color: var(--text); font-weight: 500; }
+
+  .spend-bar {
+    height: 8px;
+    border-radius: 4px;
+    overflow: hidden;
+    display: flex;
+    background: var(--surface-2);
+    margin-bottom: 14px;
+  }
+
+  .spend-bar div {
+    height: 100%;
+    transition: width 0.4s ease;
+  }
+
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px;
+  }
+
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12.5px;
+    color: var(--text-muted);
+  }
+
+  .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  /* Sections */
+  .section {
+    margin-bottom: 24px;
+  }
+
+  .section-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-muted);
+    margin: 0 0 10px;
+  }
+
+  .chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .chip {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 999px;
+    padding: 7px 14px;
+    font-size: 13px;
+    cursor: pointer;
+  }
+
+  .chip:hover { border-color: var(--cat-streaming); color: var(--cat-streaming); }
+  .chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .chip:disabled { opacity: 0.35; cursor: default; }
+  .chip:disabled:hover { border-color: var(--border); color: var(--text); }
+
+  /* Add form */
+  .add-form {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px;
+    display: grid;
+    grid-template-columns: 2fr 1.2fr 0.9fr 0.9fr 1.1fr auto;
+    gap: 10px;
+    align-items: end;
+  }
+
+  @media (max-width: 640px) {
+    .add-form { grid-template-columns: 1fr 1fr; }
+    /* iOS Safari zooms in on focused inputs when their font-size is below
+       16px. Every text/number/date input in the app is smaller than that on
+       desktop, so bump them all up on mobile viewports to suppress the zoom
+       dance — the visual chunkiness is a fair trade for the UX win. */
+    input, select, .cost-edit, .note-input, .date-input, .cat-select,
+    .list-toolbar input[type="search"], .modal input {
+      font-size: 16px;
+    }
+  }
+
+  .field label {
+    display: block;
+    font-size: 11.5px;
+    color: var(--text-faint);
+    margin-bottom: 5px;
+  }
+
+  input, select {
+    width: 100%;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 6px;
+    padding: 8px 9px;
+    font-size: 13.5px;
+    font-family: inherit;
+  }
+
+  input:focus-visible, select:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
+
+  .btn-primary {
+    background: var(--accent);
+    color: var(--accent-text);
+    border: none;
+    border-radius: 6px;
+    padding: 9px 16px;
+    font-size: 13.5px;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+
+  .btn-primary:hover { filter: brightness(1.08); }
+
+  /* Item list */
+  .items { display: flex; flex-direction: column; gap: 6px; }
+
+  .item {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--item-color, var(--cat-other));
+    border-radius: 8px;
+    padding: 10px 12px;
+  }
+
+  .item-top {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .item-name { font-size: 14px; font-weight: 500; flex: 1; min-width: 0; }
+  .item-cat { font-size: 11.5px; color: var(--text-faint); }
+
+  .note-input {
+    flex: 1;
+    min-width: 0;
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    font-size: 12.5px;
+    font-family: inherit;
+    padding: 0;
+  }
+
+  .note-input::placeholder { color: var(--text-faint); }
+  .note-input:focus-visible { outline: none; color: var(--text); }
+
+  .item-meta {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding-top: 6px;
+    border-top: 1px dashed var(--border);
+  }
+
+  .date-input {
+    flex-shrink: 0;
+    width: auto;
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    font-size: 12.5px;
+    font-family: inherit;
+    padding: 0;
+    color-scheme: var(--scheme);
+  }
+
+  .renewal-badge {
+    flex-shrink: 0;
+    font-size: 11.5px;
+    font-weight: 600;
+    color: var(--text-faint);
+  }
+
+  .renewal-badge.soon { color: var(--danger); }
+  .renewal-badge.upcoming { color: var(--cat-utilities); }
+
+  /* Upcoming renewals panel */
+  .upcoming-list { display: flex; flex-direction: column; gap: 6px; }
+
+  .upcoming-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-size: 13px;
+  }
+
+  .upcoming-row .days {
+    margin-left: auto;
+    font-weight: 600;
+    font-size: 12px;
+  }
+
+  .upcoming-row .days.soon { color: var(--danger); }
+  .upcoming-row .days.upcoming { color: var(--cat-utilities); }
+
+  /* Search / sort toolbar */
+  .list-toolbar {
+    display: none;
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+
+  .list-toolbar.visible { display: flex; }
+
+  .list-toolbar input[type="search"] {
+    flex: 1;
+  }
+
+  .list-toolbar select { width: auto; flex-shrink: 0; }
+
+  .item-cost {
+    font-size: 14px;
+    font-weight: 600;
+    text-align: right;
+    white-space: nowrap;
+  }
+
+  .item-cost .cycle-tag {
+    font-size: 10.5px;
+    font-weight: 500;
+    color: var(--text-faint);
+    margin-left: 4px;
+  }
+
+  .item input.cost-edit {
+    width: 80px;
+    text-align: right;
+  }
+
+  .price-delta {
+    display: block;
+    font-size: 10.5px;
+    font-weight: 600;
+    margin-top: 2px;
+    color: var(--text-faint);
+  }
+
+  .price-delta.up { color: var(--cat-utilities); }    /* Ross Orange — cost increased */
+  .price-delta.down { color: var(--cat-subscriptions); } /* Wave Field Green — cost decreased */
+
+  .item-del {
+    background: none;
+    border: none;
+    color: var(--text-faint);
+    font-size: 16px;
+    cursor: pointer;
+    padding: 2px 6px;
+    line-height: 1;
+  }
+
+  .item-del:hover { color: var(--danger); }
+
+  .empty {
+    text-align: center;
+    padding: 32px 16px;
+    color: var(--text-faint);
+    font-size: 13.5px;
+    border: 1px dashed var(--border);
+    border-radius: var(--radius);
+  }
+
+  .footer-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 6px;
+  }
+
+  .footer-actions {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+
+  .text-link {
+    background: none;
+    border: none;
+    color: var(--text-faint);
+    font-size: 12px;
+    cursor: pointer;
+    text-decoration: underline;
+    padding: 0;
+  }
+
+  .text-link:hover { color: var(--accent); }
+
+  .reset-link {
+    background: none;
+    border: none;
+    color: var(--text-faint);
+    font-size: 12px;
+    cursor: pointer;
+    text-decoration: underline;
+    padding: 0;
+  }
+
+  .reset-link:hover { color: var(--danger); }
+
+  .status { font-size: 12px; color: var(--text-faint); }
+
+  /* Update-available banner */
+  .update-banner {
+    position: fixed;
+    left: 50%;
+    bottom: calc(20px + env(safe-area-inset-bottom));
+    transform: translateX(-50%);
+    background: var(--accent);
+    color: var(--accent-text);
+    border-radius: 999px;
+    padding: 10px 8px 10px 16px;
+    display: none;
+    align-items: center;
+    gap: 12px;
+    font-size: 13px;
+    font-weight: 500;
+    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+    z-index: 100;
+  }
+
+  .update-banner.visible { display: flex; }
+
+  .update-banner button {
+    background: var(--accent-text);
+    color: var(--accent);
+    border: none;
+    border-radius: 999px;
+    padding: 6px 14px;
+    font-size: 12.5px;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+  }
+
+  /* Header row: title on left, theme toggle on right */
+  .header-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 28px;
+  }
+
+  .header-row h1 { margin: 0; }
+
+  .theme-toggle {
+    display: flex;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 3px;
+    flex-shrink: 0;
+  }
+
+  .theme-toggle button {
+    background: none;
+    border: none;
+    color: var(--text-faint);
+    font-size: 11px;
+    font-weight: 600;
+    font-family: inherit;
+    padding: 5px 10px;
+    border-radius: 999px;
+    cursor: pointer;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+
+  .theme-toggle button.active {
+    background: var(--accent);
+    color: var(--accent-text);
+  }
+
+  /* Inline category picker on each item */
+  .cat-select {
+    background: transparent;
+    border: none;
+    color: var(--text-faint);
+    font-size: 11.5px;
+    font-family: inherit;
+    padding: 0;
+    cursor: pointer;
+    appearance: none;
+    -webkit-appearance: none;
+    color-scheme: var(--scheme);
+  }
+
+  .cat-select:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    border-radius: 3px;
+  }
+
+  /* Trial badge on items */
+  .trial-badge {
+    display: inline-block;
+    background: var(--danger);
+    color: #FFFFFF;
+    font-size: 9.5px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    padding: 2px 6px;
+    border-radius: 3px;
+    margin-left: 8px;
+    vertical-align: middle;
+  }
+
+  /* Bundle indicator — child items indent + get a chain glyph */
+  .item.child {
+    margin-left: 20px;
+    border-left-style: dashed;
+  }
+
+  .item.child .item-name::before {
+    content: "↳ ";
+    color: var(--text-faint);
+    margin-right: 4px;
+  }
+
+  .bundle-badge {
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--text-faint);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-left: 6px;
+  }
+
+  /* Undo toast */
+  .undo-toast {
+    position: fixed;
+    left: 50%;
+    bottom: calc(20px + env(safe-area-inset-bottom));
+    transform: translateX(-50%);
+    background: var(--toast-bg);
+    color: #FFFFFF;
+    border-radius: 999px;
+    padding: 10px 8px 10px 16px;
+    display: none;
+    align-items: center;
+    gap: 12px;
+    font-size: 13px;
+    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+    z-index: 99;
+  }
+
+  .undo-toast.visible { display: flex; }
+
+  .undo-toast button {
+    background: var(--accent);
+    color: var(--accent-text);
+    border: none;
+    border-radius: 999px;
+    padding: 6px 14px;
+    font-size: 12.5px;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+  }
+
+  /* Password modal for encrypted exports/imports */
+  .modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 200;
+    padding: 20px;
+  }
+
+  .modal-backdrop.visible { display: flex; }
+
+  .modal {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+    max-width: 400px;
+    width: 100%;
+  }
+
+  .modal h3 { margin: 0 0 8px; font-size: 15px; font-weight: 600; }
+  .modal p { margin: 0 0 14px; font-size: 13px; color: var(--text-muted); }
+
+  .modal input {
+    width: 100%;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 6px;
+    padding: 10px;
+    font-size: 14px;
+    font-family: inherit;
+    margin-bottom: 14px;
+  }
+
+  .modal-actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+  }
+
+  .modal-actions button {
+    border-radius: 6px;
+    padding: 8px 16px;
+    font-size: 13px;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+  }
+
+  .modal-actions .cancel {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+  }
+
+  .modal-actions .confirm {
+    background: var(--accent);
+    color: var(--accent-text);
+    border: none;
+  }
+
+  /* Widget-style compact ticker when installed as a standalone PWA */
+  @media (display-mode: standalone) {
+    .header-row { margin-bottom: 20px; }
+    .ticker { padding: 32px 24px 22px; }
+    .ticker-main .num { font-size: 56px; }
+    .ticker-main .label { font-size: 14px; }
+    .eyebrow { display: none; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <p class="eyebrow">Tracker</p>
+  <div class="header-row">
+    <h1>Monthly Recurring Expenses</h1>
+    <div class="theme-toggle" role="group" aria-label="Theme">
+      <button type="button" data-theme-choice="auto" title="Follow system">Auto</button>
+      <button type="button" data-theme-choice="light" title="Light">Light</button>
+      <button type="button" data-theme-choice="dark" title="Dark">Dark</button>
+    </div>
+  </div>
+
+  <div class="ticker">
+    <div class="ticker-main">
+      <span class="num" id="monthlyTotal">$0.00</span>
+      <span class="label">/ month</span>
+    </div>
+    <div class="ticker-sub"><span class="num" id="annualTotal">$0.00</span> / year across <span class="num" id="itemCount">0</span> subscriptions</div>
+    <div class="spend-bar" id="spendBar"></div>
+    <div class="legend" id="legend"></div>
+  </div>
+
+  <div class="section" id="upcomingSection" style="display:none;">
+    <p class="section-title">Renewing soon</p>
+    <div class="upcoming-list" id="upcomingList"></div>
+  </div>
+
+  <div class="section">
+    <p class="section-title">Quick add · streaming</p>
+    <div class="chips" id="quickChips"></div>
+  </div>
+
+  <div class="section">
+    <p class="section-title">Add an expense</p>
+    <form class="add-form" id="addForm">
+      <div class="field">
+        <label for="fName">Name</label>
+        <input id="fName" type="text" placeholder="e.g. Netflix" required>
+      </div>
+      <div class="field">
+        <label for="fCat">Category</label>
+        <select id="fCat">
+          <option>Streaming</option>
+          <option>Software</option>
+          <option>Utilities</option>
+          <option>Fitness</option>
+          <option>Subscriptions</option>
+          <option>Other</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="fCost">Cost</label>
+        <input id="fCost" type="number" step="0.01" min="0" placeholder="0.00" required>
+      </div>
+      <div class="field">
+        <label for="fCycle">Billed</label>
+        <select id="fCycle">
+          <option value="monthly">Monthly</option>
+          <option value="annual">Annually</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="fRenewal">Renews (optional)</label>
+        <input id="fRenewal" type="date">
+      </div>
+      <button type="submit" class="btn-primary">Add expense</button>
+      <div class="field" style="grid-column: 1 / -1;">
+        <label for="fNotes">Notes (optional)</label>
+        <input id="fNotes" type="text" placeholder="e.g. bundled free with Xfinity — check if worth unbundling">
+      </div>
+      <div class="field" style="grid-column: 1 / span 2;">
+        <label for="fParent">Part of a bundle? (optional)</label>
+        <select id="fParent">
+          <option value="">— Standalone —</option>
+        </select>
+      </div>
+      <div class="field" style="grid-column: span 2; display:flex; align-items:center; gap:6px; padding-bottom:8px;">
+        <input id="fTrial" type="checkbox" style="width:auto; margin:0;">
+        <label for="fTrial" style="margin:0;">This is a free trial</label>
+      </div>
+    </form>
+  </div>
+
+  <div class="section">
+    <p class="section-title">Your expenses</p>
+    <div class="list-toolbar" id="listToolbar">
+      <input type="search" id="searchInput" placeholder="Search by name, category, or note…">
+      <select id="sortSelect">
+        <option value="category">Sort: Category</option>
+        <option value="cost-desc">Sort: Cost (high to low)</option>
+        <option value="cost-asc">Sort: Cost (low to high)</option>
+        <option value="name">Sort: Name (A–Z)</option>
+        <option value="renewal">Sort: Renewal date</option>
+      </select>
+    </div>
+    <div class="items" id="itemsList"></div>
+    <div class="footer-row">
+      <span class="status" id="statusMsg"></span>
+      <div class="footer-actions">
+        <button class="text-link" id="importBtn" type="button">Import</button>
+        <input type="file" id="importFile" accept=".csv,.json,application/json,text/csv" style="display:none">
+        <button class="text-link" id="exportCsvBtn">Export CSV</button>
+        <button class="text-link" id="exportJsonBtn">Export JSON</button>
+        <button class="text-link" id="exportEncBtn">Export encrypted</button>
+        <button class="reset-link" id="resetBtn">Clear all</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="update-banner" id="updateBanner" role="status">
+  <span>New version available</span>
+  <button type="button" id="updateReloadBtn">Refresh</button>
+</div>
+
+<div class="undo-toast" id="undoToast" role="status">
+  <span id="undoToastText">Deleted</span>
+  <button type="button" id="undoBtn">Undo</button>
+</div>
+
+<div class="modal-backdrop" id="passwordModal" role="dialog" aria-modal="true">
+  <div class="modal">
+    <h3 id="passwordTitle">Encryption password</h3>
+    <p id="passwordDesc">This password protects your export. If you lose it, the file cannot be recovered.</p>
+    <input type="password" id="passwordInput" autocomplete="off" placeholder="Password">
+    <div class="modal-actions">
+      <button type="button" class="cancel" id="passwordCancel">Cancel</button>
+      <button type="button" class="confirm" id="passwordConfirm">Continue</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const CATEGORIES = {
+  Streaming: 'var(--cat-streaming)',
+  Software: 'var(--cat-software)',
+  Utilities: 'var(--cat-utilities)',
+  Fitness: 'var(--cat-fitness)',
+  Subscriptions: 'var(--cat-subscriptions)',
+  Other: 'var(--cat-other)'
+};
+
+const QUICK_STREAMING = [
+  'Netflix', 'Disney+', 'Max', 'Hulu', 'Paramount+', 'Peacock',
+  'Apple TV+', 'Prime Video', 'YouTube Premium', 'Spotify', 'Apple Music', 'ESPN+'
+];
+
+const STORAGE_KEY = 'recurring-expenses-list';
+const THEME_KEY = 'recurring-expenses-theme';
+const SCHEMA_VERSION = 2;
+let items = [];
+let lastDeleted = null;      // For undo-delete
+let undoTimer = null;
+
+// Ensures every item has the current schema's fields, filling in defaults for
+// items created before those fields existed. Called during load-time migration
+// and whenever data is imported.
+function normalizeItem(item) {
+  return {
+    id: item.id || crypto.randomUUID(),
+    name: item.name || '',
+    category: item.category || 'Other',
+    cost: typeof item.cost === 'number' ? item.cost : (parseFloat(item.cost) || 0),
+    cycle: item.cycle === 'annual' ? 'annual' : 'monthly',
+    note: item.note || '',
+    renewalDate: item.renewalDate || '',
+    priceHistory: Array.isArray(item.priceHistory) ? item.priceHistory : [],
+    parentId: item.parentId || '',
+    isTrial: !!item.isTrial
+  };
+}
+
+async function loadItems() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    // v1 format was a bare array; v2+ wraps in { schemaVersion, items }.
+    // Migrate silently so users on the old format don't lose data.
+    const rawItems = Array.isArray(parsed) ? parsed : (parsed.items || []);
+    return rawItems.map(normalizeItem);
+  } catch (e) {
+    return [];
+  }
+}
+
+async function saveItems() {
+  try {
+    const payload = { schemaVersion: SCHEMA_VERSION, items };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+    setStatus('Saved');
+  } catch (e) {
+    setStatus('Could not save — changes may not persist');
+  }
+}
+
+function money(n) {
+  return '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+// Theme: three-state (auto/light/dark). Auto = follow system preference via
+// the CSS media query alone. Light/Dark = force via [data-theme] attribute.
+function applyTheme(choice) {
+  const html = document.documentElement;
+  if (choice === 'auto') {
+    html.removeAttribute('data-theme');
+  } else {
+    html.setAttribute('data-theme', choice);
+  }
+  // Update <meta name="theme-color"> so iOS status bar tint matches
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) {
+    const isLight = choice === 'light' ||
+      (choice === 'auto' && window.matchMedia('(prefers-color-scheme: light)').matches);
+    meta.setAttribute('content', isLight ? '#FFFFFF' : '#00274C');
+  }
+  document.querySelectorAll('[data-theme-choice]').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.themeChoice === choice);
+  });
+}
+
+function initTheme() {
+  const stored = localStorage.getItem(THEME_KEY) || 'auto';
+  applyTheme(stored);
+  document.querySelectorAll('[data-theme-choice]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const choice = btn.dataset.themeChoice;
+      localStorage.setItem(THEME_KEY, choice);
+      applyTheme(choice);
+    });
+  });
+  // If we're on auto and the OS toggles, keep the meta tag in sync
+  window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', () => {
+    if ((localStorage.getItem(THEME_KEY) || 'auto') === 'auto') applyTheme('auto');
+  });
+}
+
+// Best-effort haptic. Android home-screen PWAs support this. iOS Safari
+// deliberately blocks the Vibration API — nothing we can do about that
+// without a native wrapper, so it silently no-ops there.
+function haptic(pattern = 8) {
+  try { navigator.vibrate && navigator.vibrate(pattern); } catch (e) { /* no-op */ }
+}
+
+// Undo toast: keeps deleted items in memory for 5 seconds and offers a restore.
+function showUndoToast(deletedList, message) {
+  const toast = document.getElementById('undoToast');
+  const text = document.getElementById('undoToastText');
+  text.textContent = message;
+  lastDeleted = deletedList;
+  toast.classList.add('visible');
+  if (undoTimer) clearTimeout(undoTimer);
+  undoTimer = setTimeout(() => {
+    toast.classList.remove('visible');
+    lastDeleted = null;
+  }, 5000);
+}
+
+function performUndo() {
+  if (!lastDeleted) return;
+  items = items.concat(lastDeleted);
+  lastDeleted = null;
+  document.getElementById('undoToast').classList.remove('visible');
+  if (undoTimer) clearTimeout(undoTimer);
+  renderAll();
+  saveItems();
+  haptic(6);
+}
+
+// Password modal — returns a Promise that resolves with the entered password
+// or null if cancelled. Cleaner UX than a native prompt() dialog.
+function askPassword(title, description) {
+  return new Promise(resolve => {
+    const modal = document.getElementById('passwordModal');
+    const input = document.getElementById('passwordInput');
+    document.getElementById('passwordTitle').textContent = title;
+    document.getElementById('passwordDesc').textContent = description;
+    input.value = '';
+    modal.classList.add('visible');
+    setTimeout(() => input.focus(), 50);
+
+    const cleanup = () => {
+      modal.classList.remove('visible');
+      document.getElementById('passwordConfirm').removeEventListener('click', onConfirm);
+      document.getElementById('passwordCancel').removeEventListener('click', onCancel);
+      input.removeEventListener('keydown', onKey);
+    };
+    const onConfirm = () => {
+      const val = input.value;
+      cleanup();
+      resolve(val || null);
+    };
+    const onCancel = () => { cleanup(); resolve(null); };
+    const onKey = (e) => {
+      if (e.key === 'Enter') onConfirm();
+      else if (e.key === 'Escape') onCancel();
+    };
+    document.getElementById('passwordConfirm').addEventListener('click', onConfirm);
+    document.getElementById('passwordCancel').addEventListener('click', onCancel);
+    input.addEventListener('keydown', onKey);
+  });
+}
+
+function monthlyEquiv(item) {
+  return item.cycle === 'annual' ? item.cost / 12 : item.cost;
+}
+
+function annualEquiv(item) {
+  return item.cycle === 'annual' ? item.cost : item.cost * 12;
+}
+
+// --- Encryption helpers ---
+// Uses standard Web Crypto (available everywhere modern including iOS Safari).
+// PBKDF2 (250k iterations) + AES-GCM. Encrypted export is a self-describing
+// JSON envelope so import can auto-detect and prompt for the password.
+
+const ENC_MAGIC = 'expenses-tracker-encrypted';
+const ENC_ITERATIONS = 250000;
+
+function bufToB64(buf) {
+  return btoa(String.fromCharCode(...new Uint8Array(buf)));
+}
+function b64ToBuf(b64) {
+  return Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+}
+
+async function deriveKey(password, salt, iterations) {
+  const enc = new TextEncoder();
+  const material = await crypto.subtle.importKey(
+    'raw', enc.encode(password), 'PBKDF2', false, ['deriveKey']
+  );
+  return crypto.subtle.deriveKey(
+    { name: 'PBKDF2', salt, iterations, hash: 'SHA-256' },
+    material,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['encrypt', 'decrypt']
+  );
+}
+
+async function encryptJson(plaintextJson, password) {
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const key = await deriveKey(password, salt, ENC_ITERATIONS);
+  const enc = new TextEncoder();
+  const ciphertext = await crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv },
+    key,
+    enc.encode(plaintextJson)
+  );
+  return JSON.stringify({
+    v: 1,
+    type: ENC_MAGIC,
+    iterations: ENC_ITERATIONS,
+    salt: bufToB64(salt),
+    iv: bufToB64(iv),
+    data: bufToB64(ciphertext)
+  }, null, 2);
+}
+
+async function decryptJson(envelope, password) {
+  if (envelope.type !== ENC_MAGIC) throw new Error('Not an encrypted expenses file');
+  const iterations = Number.isInteger(envelope.iterations) ? envelope.iterations : ENC_ITERATIONS;
+  const salt = b64ToBuf(envelope.salt);
+  const iv = b64ToBuf(envelope.iv);
+  const data = b64ToBuf(envelope.data);
+  const key = await deriveKey(password, salt, iterations);
+  const plaintext = await crypto.subtle.decrypt(
+    { name: 'AES-GCM', iv },
+    key,
+    data
+  );
+  return new TextDecoder().decode(plaintext);
+}
+
+function isEncryptedEnvelope(obj) {
+  return obj && typeof obj === 'object' && obj.type === ENC_MAGIC;
+}
+
+// Only record when the price actually changes, and cap history so it doesn't
+// grow unbounded from repeated typo-corrections during a single session.
+function recordPriceChange(item, newCost) {
+  const oldCost = item.cost;
+  if (newCost === oldCost) return false;
+  item.priceHistory = item.priceHistory || [];
+  item.priceHistory.push({ cost: oldCost, changedAt: new Date().toISOString() });
+  if (item.priceHistory.length > 10) item.priceHistory = item.priceHistory.slice(-10);
+  item.cost = newCost;
+  return true;
+}
+
+function priceDeltaHtml(item) {
+  if (!item.priceHistory || item.priceHistory.length === 0) return '';
+  const prev = item.priceHistory[item.priceHistory.length - 1];
+  const delta = item.cost - prev.cost;
+  if (delta === 0) return '';
+  const dir = delta > 0 ? 'up' : 'down';
+  const arrow = delta > 0 ? '↑' : '↓';
+  const abs = Math.abs(delta).toFixed(2);
+  const when = new Date(prev.changedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  return `<span class="price-delta ${dir}" title="Was $${prev.cost.toFixed(2)} as of ${when}">${arrow} $${abs}</span>`;
+}
+
+let searchQuery = '';
+let sortMode = 'category';
+
+// Rolls a stored renewal date forward by its billing cycle until it lands
+// on today or later, so a date only needs to be set once, not every month.
+function nextOccurrence(item) {
+  if (!item.renewalDate) return null;
+  const d = new Date(item.renewalDate + 'T00:00:00');
+  if (isNaN(d.getTime())) return null;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  while (d < today) {
+    if (item.cycle === 'annual') d.setFullYear(d.getFullYear() + 1);
+    else d.setMonth(d.getMonth() + 1);
+  }
+  return d;
+}
+
+function daysUntil(date) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return Math.round((date - today) / 86400000);
+}
+
+function renewalBadgeHtml(item) {
+  const next = nextOccurrence(item);
+  if (!next) return '';
+  const days = daysUntil(next);
+  const label = days === 0 ? 'Today' : days === 1 ? 'Tomorrow' : `${days}d`;
+  const cls = days <= 3 ? 'soon' : days <= 14 ? 'upcoming' : '';
+  return `<span class="renewal-badge ${cls}">${label}</span>`;
+}
+
+function renderUpcoming() {
+  const section = document.getElementById('upcomingSection');
+  const list = document.getElementById('upcomingList');
+
+  const upcoming = items
+    .map(item => ({ item, next: nextOccurrence(item) }))
+    .filter(x => x.next && daysUntil(x.next) <= 14)
+    // Trials float to the top of the list — missing a trial cutoff costs
+    // real money in a way missing a regular renewal doesn't.
+    .sort((a, b) => {
+      if (a.item.isTrial !== b.item.isTrial) return a.item.isTrial ? -1 : 1;
+      return a.next - b.next;
+    });
+
+  if (upcoming.length === 0) {
+    section.style.display = 'none';
+    list.innerHTML = '';
+    return;
+  }
+
+  section.style.display = '';
+  list.innerHTML = '';
+  upcoming.forEach(({ item, next }) => {
+    const days = daysUntil(next);
+    const label = days === 0 ? 'Today' : days === 1 ? 'Tomorrow' : `in ${days}d`;
+    // Trials are always "soon" visually so they stand out even at 10+ days out.
+    const cls = item.isTrial ? 'soon' : (days <= 3 ? 'soon' : 'upcoming');
+    const dateStr = next.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    const color = CATEGORIES[item.category] || CATEGORIES.Other;
+    const trialTag = item.isTrial ? '<span class="trial-badge">TRIAL</span>' : '';
+    const row = document.createElement('div');
+    row.className = 'upcoming-row';
+    row.innerHTML = `<span class="dot" style="background:${color}"></span>${escapeHtml(item.name)}${trialTag} · ${dateStr}<span class="days ${cls}">${label}</span>`;
+    list.appendChild(row);
+  });
+}
+
+function setStatus(msg) {
+  const el = document.getElementById('statusMsg');
+  el.textContent = msg;
+  if (msg) setTimeout(() => { if (el.textContent === msg) el.textContent = ''; }, 1800);
+}
+
+function renderQuickChips() {
+  const el = document.getElementById('quickChips');
+  el.innerHTML = '';
+  QUICK_STREAMING.forEach(name => {
+    const already = items.some(i => i.name.toLowerCase() === name.toLowerCase());
+    const btn = document.createElement('button');
+    btn.className = 'chip';
+    btn.type = 'button';
+    btn.textContent = already ? name + ' ✓' : name;
+    btn.disabled = already;
+    btn.addEventListener('click', () => quickAdd(name));
+    el.appendChild(btn);
+  });
+}
+
+function quickAdd(name) {
+  const item = normalizeItem({ name, category: 'Streaming', cost: 0, cycle: 'monthly' });
+  items.push(item);
+  renderAll();
+  saveItems();
+  haptic(6);
+  requestAnimationFrame(() => {
+    const input = document.querySelector(`[data-cost-for="${item.id}"]`);
+    if (input) { input.focus(); input.select(); }
+  });
+}
+
+function renderTicker() {
+  const monthly = items.reduce((sum, i) => sum + monthlyEquiv(i), 0);
+  const annual = items.reduce((sum, i) => sum + annualEquiv(i), 0);
+  document.getElementById('monthlyTotal').textContent = money(monthly);
+  document.getElementById('annualTotal').textContent = money(annual);
+  document.getElementById('itemCount').textContent = items.length;
+
+  const byCat = {};
+  items.forEach(i => { byCat[i.category] = (byCat[i.category] || 0) + monthlyEquiv(i); });
+
+  const knownOrder = Object.keys(CATEGORIES);
+  const catKeys = Object.keys(byCat).sort((a, b) => {
+    const ai = knownOrder.indexOf(a), bi = knownOrder.indexOf(b);
+    if (ai !== -1 && bi !== -1) return ai - bi;
+    if (ai !== -1) return -1;
+    if (bi !== -1) return 1;
+    return a.localeCompare(b);
+  });
+
+  const bar = document.getElementById('spendBar');
+  bar.innerHTML = '';
+  const legend = document.getElementById('legend');
+  legend.innerHTML = '';
+
+  catKeys.forEach(cat => {
+    const val = byCat[cat];
+    if (val <= 0) return;
+    const color = CATEGORIES[cat] || CATEGORIES.Other;
+    const pct = monthly > 0 ? (val / monthly) * 100 : 0;
+    const seg = document.createElement('div');
+    seg.style.width = pct + '%';
+    seg.style.background = color;
+    seg.title = `${cat}: ${money(val)}/mo`;
+    bar.appendChild(seg);
+
+    const li = document.createElement('div');
+    li.className = 'legend-item';
+    li.innerHTML = `<span class="dot" style="background:${color}"></span>${escapeHtml(cat)} · ${money(val)}`;
+    legend.appendChild(li);
+  });
+}
+
+function sortItems(list, mode) {
+  const arr = [...list];
+  switch (mode) {
+    case 'cost-desc':
+      return arr.sort((a, b) => monthlyEquiv(b) - monthlyEquiv(a));
+    case 'cost-asc':
+      return arr.sort((a, b) => monthlyEquiv(a) - monthlyEquiv(b));
+    case 'name':
+      return arr.sort((a, b) => a.name.localeCompare(b.name));
+    case 'renewal':
+      return arr.sort((a, b) => {
+        const na = nextOccurrence(a), nb = nextOccurrence(b);
+        if (na && nb) return na - nb;
+        if (na) return -1;
+        if (nb) return 1;
+        return a.name.localeCompare(b.name);
+      });
+    case 'category':
+    default:
+      return arr.sort((a, b) => {
+        if (a.category !== b.category) return a.category.localeCompare(b.category);
+        return monthlyEquiv(b) - monthlyEquiv(a);
+      });
+  }
+}
+
+function renderItems() {
+  const list = document.getElementById('itemsList');
+  const toolbar = document.getElementById('listToolbar');
+  list.innerHTML = '';
+
+  toolbar.classList.toggle('visible', items.length > 4);
+
+  if (items.length === 0) {
+    list.innerHTML = '<div class="empty">Nothing tracked yet. Use a quick-add chip above or the form to get started.</div>';
+    return;
+  }
+
+  const q = searchQuery.trim().toLowerCase();
+  const filtered = q
+    ? items.filter(i =>
+        i.name.toLowerCase().includes(q) ||
+        i.category.toLowerCase().includes(q) ||
+        (i.note || '').toLowerCase().includes(q))
+    : items;
+
+  if (filtered.length === 0) {
+    list.innerHTML = `<div class="empty">No expenses match "${escapeHtml(searchQuery)}"</div>`;
+    return;
+  }
+
+  // Bundle-aware rendering: top-level items get sorted; children follow their
+  // parent regardless of sort mode so bundles stay visually intact.
+  const filteredSet = new Set(filtered.map(i => i.id));
+  const topLevel = filtered.filter(i => !i.parentId || !filteredSet.has(i.parentId));
+  const sorted = sortItems(topLevel, sortMode);
+
+  const rendered = [];
+  sorted.forEach(item => {
+    rendered.push({ item, isChild: !!(item.parentId && !filteredSet.has(item.parentId)) });
+    const kids = items.filter(k => k.parentId === item.id);
+    kids.forEach(k => rendered.push({ item: k, isChild: true }));
+  });
+
+  rendered.forEach(({ item, isChild }) => {
+    const row = document.createElement('div');
+    row.className = 'item' + (isChild ? ' child' : '');
+    row.style.setProperty('--item-color', CATEGORIES[item.category] || CATEGORIES.Other);
+
+    const cycleTag = item.cycle === 'annual' ? `<span class="cycle-tag">/yr → ${money(monthlyEquiv(item))}/mo</span>` : '<span class="cycle-tag">/mo</span>';
+    const trialBadge = item.isTrial ? '<span class="trial-badge">TRIAL</span>' : '';
+    const hasChildren = items.some(k => k.parentId === item.id);
+    const bundleBadge = hasChildren ? '<span class="bundle-badge">Bundle</span>' : '';
+
+    const catOptions = Object.keys(CATEGORIES).map(c =>
+      `<option value="${c}"${c === item.category ? ' selected' : ''}>${c}</option>`
+    ).join('');
+
+    row.innerHTML = `
+      <div class="item-top">
+        <div class="item-name">${escapeHtml(item.name)}${trialBadge}${bundleBadge}
+          <div class="item-cat"><select class="cat-select" data-cat-for="${attr(item.id)}" aria-label="Category">${catOptions}</select></div>
+        </div>
+        <div class="item-cost">
+          <input class="cost-edit num" type="number" step="0.01" min="0" value="${item.cost}" data-cost-for="${attr(item.id)}">
+          ${cycleTag}
+          ${priceDeltaHtml(item)}
+        </div>
+        <button class="item-del" title="Remove" data-del="${attr(item.id)}">✕</button>
+      </div>
+      <div class="item-meta">
+        <input class="date-input" type="date" value="${attr(item.renewalDate || '')}" data-renewal-for="${attr(item.id)}" title="Next renewal date">
+        ${renewalBadgeHtml(item)}
+        <input class="note-input" type="text" placeholder="Add a note…" value="${attr(item.note || '')}" data-note-for="${attr(item.id)}">
+      </div>
+    `;
+    list.appendChild(row);
+  });
+
+  list.querySelectorAll('[data-cost-for]').forEach(input => {
+    input.addEventListener('change', (e) => {
+      const id = e.target.getAttribute('data-cost-for');
+      const item = items.find(i => i.id === id);
+      if (item) {
+        const newCost = parseFloat(e.target.value) || 0;
+        recordPriceChange(item, newCost);
+        renderAll();
+        saveItems();
+      }
+    });
+  });
+
+  list.querySelectorAll('[data-cat-for]').forEach(select => {
+    select.addEventListener('change', (e) => {
+      const id = e.target.getAttribute('data-cat-for');
+      const item = items.find(i => i.id === id);
+      if (item) {
+        item.category = e.target.value;
+        renderAll();
+        saveItems();
+      }
+    });
+  });
+
+  list.querySelectorAll('[data-renewal-for]').forEach(input => {
+    input.addEventListener('change', (e) => {
+      const id = e.target.getAttribute('data-renewal-for');
+      const item = items.find(i => i.id === id);
+      if (item) {
+        item.renewalDate = e.target.value;
+        renderAll();
+        saveItems();
+      }
+    });
+  });
+
+  list.querySelectorAll('[data-note-for]').forEach(input => {
+    input.addEventListener('change', (e) => {
+      const id = e.target.getAttribute('data-note-for');
+      const item = items.find(i => i.id === id);
+      if (item) {
+        item.note = e.target.value;
+        saveItems();
+      }
+    });
+  });
+
+  list.querySelectorAll('[data-del]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      const id = e.target.getAttribute('data-del');
+      const target = items.find(i => i.id === id);
+      if (!target) return;
+
+      // When deleting a parent, also delete its children as a group so the
+      // undo restores the entire bundle at once. This matches user intent
+      // ("delete Xfinity") without leaving orphaned Disney+/Hulu behind.
+      const kids = items.filter(k => k.parentId === id);
+      const removed = [target, ...kids];
+      const removedIds = new Set(removed.map(r => r.id));
+      items = items.filter(i => !removedIds.has(i.id));
+
+      const label = kids.length > 0
+        ? `Deleted ${target.name} + ${kids.length} bundled`
+        : `Deleted ${target.name}`;
+      showUndoToast(removed, label);
+      haptic(10);
+      renderAll();
+      saveItems();
+    });
+  });
+}
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+// Attribute-context escape. escapeHtml handles &<> but not the quote used
+// to delimit an attribute value, so untrusted strings (imported IDs, dates)
+// inside attributes need this extra guard against breakout.
+function attr(str) {
+  return String(str == null ? '' : str)
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+function renderParentOptions() {
+  const sel = document.getElementById('fParent');
+  if (!sel) return;
+  // Only offer top-level items (not children themselves) as bundle parents,
+  // to keep the parent-child model one level deep and easy to reason about.
+  const currentValue = sel.value;
+  sel.innerHTML = '<option value="">— Standalone —</option>';
+  items
+    .filter(i => !i.parentId)
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .forEach(i => {
+      const opt = document.createElement('option');
+      opt.value = i.id;
+      opt.textContent = i.name;
+      sel.appendChild(opt);
+    });
+  sel.value = currentValue;
+}
+
+function renderAll() {
+  renderQuickChips();
+  renderTicker();
+  renderUpcoming();
+  renderParentOptions();
+  renderItems();
+}
+
+document.getElementById('searchInput').addEventListener('input', (e) => {
+  searchQuery = e.target.value;
+  renderItems();
+});
+
+document.getElementById('sortSelect').addEventListener('change', (e) => {
+  sortMode = e.target.value;
+  renderItems();
+});
+
+function csvEscape(val) {
+  const str = String(val);
+  if (/[",\n]/.test(str)) return '"' + str.replace(/"/g, '""') + '"';
+  return str;
+}
+
+function toCSV(list) {
+  const headers = ['Name', 'Category', 'Cost', 'Billing Cycle', 'Monthly Equivalent', 'Annual Equivalent', 'Renewal Date', 'Notes'];
+  const rows = list.map(i => [
+    i.name,
+    i.category,
+    i.cost.toFixed(2),
+    i.cycle,
+    monthlyEquiv(i).toFixed(2),
+    annualEquiv(i).toFixed(2),
+    i.renewalDate || '',
+    i.note || ''
+  ]);
+  return [headers, ...rows].map(r => r.map(csvEscape).join(',')).join('\n');
+}
+
+function downloadFile(content, filename, mime) {
+  const blob = new Blob([content], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+// iOS 15+ supports sharing files via the native share sheet, which is a
+// nicer experience than Safari's Downloads folder. Fall back cleanly if
+// unsupported (older iOS, desktop browsers) or if the user cancels.
+async function shareOrDownload(content, filename, mime) {
+  try {
+    const file = new File([content], filename, { type: mime });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file], title: filename });
+      return 'shared';
+    }
+  } catch (err) {
+    // User cancelled the share sheet — treat as no-op, don't fall through
+    // to a download they didn't ask for.
+    if (err && err.name === 'AbortError') return 'cancelled';
+  }
+  downloadFile(content, filename, mime);
+  return 'downloaded';
+}
+
+function normalizeCategory(cat) {
+  const known = Object.keys(CATEGORIES);
+  const match = known.find(k => k.toLowerCase() === cat.toLowerCase());
+  return match || cat;
+}
+
+function normalizeCycle(raw) {
+  return /year|annual/i.test(raw || '') ? 'annual' : 'monthly';
+}
+
+// Minimal RFC4180-ish CSV parser: handles quoted fields, embedded commas/newlines, "" escapes.
+function parseCSV(text) {
+  const rows = [];
+  let row = [], field = '', inQuotes = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inQuotes) {
+      if (c === '"') {
+        if (text[i + 1] === '"') { field += '"'; i++; }
+        else { inQuotes = false; }
+      } else {
+        field += c;
+      }
+    } else {
+      if (c === '"') inQuotes = true;
+      else if (c === ',') { row.push(field); field = ''; }
+      else if (c === '\n') { row.push(field); rows.push(row); row = []; field = ''; }
+      else if (c === '\r') { /* skip */ }
+      else field += c;
+    }
+  }
+  if (field.length > 0 || row.length > 0) { row.push(field); rows.push(row); }
+  return rows.filter(r => r.some(c => c.trim() !== ''));
+}
+
+function csvToItems(text) {
+  const rows = parseCSV(text);
+  if (rows.length < 2) return [];
+  const headers = rows[0].map(h => h.trim().toLowerCase());
+  const idx = (...names) => {
+    for (const n of names) { const i = headers.indexOf(n); if (i !== -1) return i; }
+    return -1;
+  };
+  const nameIdx = idx('name', 'service', 'expense');
+  const catIdx = idx('category');
+  const costIdx = idx('cost', 'amount', 'price');
+  const cycleIdx = idx('billing cycle', 'cycle', 'frequency', 'billed');
+  const monthlyIdx = idx('monthly equivalent', 'monthly');
+  const annualIdx = idx('annual equivalent', 'annual', 'yearly');
+  const renewalIdx = idx('renewal date', 'renews', 'next renewal', 'renewal');
+  const noteIdx = idx('notes', 'note');
+
+  const result = [];
+  for (let r = 1; r < rows.length; r++) {
+    const row = rows[r];
+    const name = nameIdx !== -1 ? (row[nameIdx] || '').trim() : '';
+    if (!name) continue;
+
+    const category = normalizeCategory((catIdx !== -1 ? row[catIdx] : '').trim() || 'Other');
+    let cycle = cycleIdx !== -1 ? normalizeCycle(row[cycleIdx]) : null;
+
+    let cost = null;
+    if (costIdx !== -1 && (row[costIdx] || '').trim() !== '') {
+      cost = parseFloat(row[costIdx]) || 0;
+      cycle = cycle || 'monthly';
+    } else if (monthlyIdx !== -1 && (row[monthlyIdx] || '').trim() !== '') {
+      cost = parseFloat(row[monthlyIdx]) || 0;
+      cycle = 'monthly';
+    } else if (annualIdx !== -1 && (row[annualIdx] || '').trim() !== '') {
+      cost = parseFloat(row[annualIdx]) || 0;
+      cycle = 'annual';
+    } else {
+      cost = 0;
+      cycle = cycle || 'monthly';
+    }
+
+    const note = noteIdx !== -1 ? (row[noteIdx] || '').trim() : '';
+    const renewalDate = renewalIdx !== -1 ? (row[renewalIdx] || '').trim() : '';
+    result.push({ name, category, cost, cycle, note, renewalDate });
+  }
+  return result;
+}
+
+function jsonToItems(text) {
+  const data = JSON.parse(text);
+  // Accept both v1 bare-array format and v2+ wrapped {schemaVersion, items}
+  const arr = Array.isArray(data) ? data : (Array.isArray(data.items) ? data.items : []);
+  const result = [];
+  arr.forEach(entry => {
+    const name = (entry.name || entry.service || '').toString().trim();
+    if (!name) return;
+    const category = normalizeCategory((entry.category || 'Other').toString().trim());
+    const cycle = normalizeCycle((entry.cycle || entry.billingCycle || entry.frequency || 'monthly').toString());
+    const cost = parseFloat(entry.cost ?? entry.amount ?? entry.price ?? 0) || 0;
+    const note = (entry.note || entry.notes || '').toString();
+    const renewalDate = (entry.renewalDate || entry.renewal_date || entry.renewsOn || '').toString();
+    const parentId = (entry.parentId || '').toString();
+    const isTrial = !!entry.isTrial;
+    result.push({ name, category, cost, cycle, note, renewalDate, parentId, isTrial });
+  });
+  return result;
+}
+
+// Matches on name + category so re-importing a prior export updates existing
+// rows in place instead of creating duplicates; anything new gets appended.
+function mergeImportedItems(parsed) {
+  let added = 0, updated = 0;
+  parsed.forEach(p => {
+    const match = items.find(i => i.name.toLowerCase() === p.name.toLowerCase() && i.category === p.category);
+    if (match) {
+      if (p.cost !== match.cost) recordPriceChange(match, p.cost);
+      match.cycle = p.cycle;
+      if (p.note) match.note = p.note;
+      if (p.renewalDate) match.renewalDate = p.renewalDate;
+      if (p.parentId !== undefined && p.parentId !== '') match.parentId = p.parentId;
+      if (p.isTrial !== undefined) match.isTrial = p.isTrial;
+      updated++;
+    } else {
+      items.push(normalizeItem(p));
+      added++;
+    }
+  });
+  return { added, updated };
+}
+
+document.getElementById('importBtn').addEventListener('click', () => {
+  document.getElementById('importFile').click();
+});
+
+document.getElementById('importFile').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  try {
+    let text = await file.text();
+    const isJsonExt = file.name.toLowerCase().endsWith('.json');
+    const isCsvExt = file.name.toLowerCase().endsWith('.csv');
+    const looksJson = isJsonExt || (!isCsvExt && /^\s*[\[{]/.test(text));
+
+    // Detect encrypted envelope early so we can prompt before parsing rows
+    if (looksJson) {
+      try {
+        const maybeEnvelope = JSON.parse(text);
+        if (isEncryptedEnvelope(maybeEnvelope)) {
+          const password = await askPassword(
+            'Encrypted backup',
+            'Enter the password used when this file was exported.'
+          );
+          if (!password) { setStatus('Import cancelled'); e.target.value = ''; return; }
+          setStatus('Decrypting…');
+          try {
+            text = await decryptJson(maybeEnvelope, password);
+          } catch (err) {
+            setStatus('Wrong password or file is corrupt');
+            e.target.value = '';
+            return;
+          }
+        }
+      } catch { /* fall through to normal parsing */ }
+    }
+
+    const parsed = looksJson ? jsonToItems(text) : csvToItems(text);
+
+    if (parsed.length === 0) {
+      setStatus('No valid rows found in that file');
+    } else {
+      const { added, updated } = mergeImportedItems(parsed);
+      renderAll();
+      saveItems();
+      setStatus(`Imported: ${added} added, ${updated} updated`);
+    }
+  } catch (err) {
+    setStatus('Could not read that file — check the format');
+  }
+  e.target.value = '';
+});
+
+document.getElementById('exportCsvBtn').addEventListener('click', async () => {
+  if (items.length === 0) { setStatus('Nothing to export yet'); return; }
+  const date = new Date().toISOString().slice(0, 10);
+  const result = await shareOrDownload(toCSV(items), `recurring-expenses-${date}.csv`, 'text/csv;charset=utf-8;');
+  if (result === 'shared') setStatus('CSV shared');
+  else if (result === 'downloaded') setStatus('CSV downloaded');
+});
+
+document.getElementById('exportJsonBtn').addEventListener('click', async () => {
+  if (items.length === 0) { setStatus('Nothing to export yet'); return; }
+  const date = new Date().toISOString().slice(0, 10);
+  const result = await shareOrDownload(JSON.stringify(items, null, 2), `recurring-expenses-${date}.json`, 'application/json');
+  if (result === 'shared') setStatus('JSON shared');
+  else if (result === 'downloaded') setStatus('JSON downloaded');
+});
+
+document.getElementById('addForm').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const name = document.getElementById('fName').value.trim();
+  const category = document.getElementById('fCat').value;
+  const cost = parseFloat(document.getElementById('fCost').value) || 0;
+  const cycle = document.getElementById('fCycle').value;
+  const note = document.getElementById('fNotes').value.trim();
+  const renewalDate = document.getElementById('fRenewal').value;
+  const parentId = document.getElementById('fParent').value;
+  const isTrial = document.getElementById('fTrial').checked;
+  if (!name) return;
+
+  const existing = items.find(i => i.name.toLowerCase() === name.toLowerCase());
+  if (existing) {
+    const msg = `"${existing.name}" already exists in ${existing.category}. Add another anyway?`;
+    if (!confirm(msg)) {
+      document.getElementById('fName').focus();
+      document.getElementById('fName').select();
+      return;
+    }
+  }
+
+  items.push(normalizeItem({ name, category, cost, cycle, note, renewalDate, parentId, isTrial }));
+  e.target.reset();
+  document.getElementById('fName').focus();
+  renderAll();
+  saveItems();
+  haptic(6);
+});
+
+document.getElementById('resetBtn').addEventListener('click', () => {
+  if (items.length === 0) return;
+  if (confirm('Clear all tracked expenses? You can undo this for 5 seconds.')) {
+    const backup = items.slice();
+    items = [];
+    showUndoToast(backup, `Cleared ${backup.length} items`);
+    haptic(15);
+    renderAll();
+    saveItems();
+  }
+});
+
+document.getElementById('undoBtn').addEventListener('click', performUndo);
+
+document.getElementById('exportEncBtn').addEventListener('click', async () => {
+  if (items.length === 0) { setStatus('Nothing to export yet'); return; }
+  const password = await askPassword(
+    'Encrypt export',
+    'Choose a password to protect this backup. Save it somewhere safe — a lost password means the backup cannot be recovered.'
+  );
+  if (!password) return;
+  setStatus('Encrypting…');
+  try {
+    const plaintext = JSON.stringify({ schemaVersion: SCHEMA_VERSION, items }, null, 2);
+    const envelope = await encryptJson(plaintext, password);
+    const date = new Date().toISOString().slice(0, 10);
+    const result = await shareOrDownload(envelope, `recurring-expenses-${date}.enc.json`, 'application/json');
+    if (result === 'shared') setStatus('Encrypted export shared');
+    else if (result === 'downloaded') setStatus('Encrypted export downloaded');
+  } catch (err) {
+    setStatus('Encryption failed');
+  }
+});
+
+(async function init() {
+  initTheme();
+  setStatus('Loading…');
+  items = await loadItems();
+  setStatus('');
+  renderAll();
+})();
+
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js').then(reg => {
+      // Detect a new SW installing after the initial one is already active.
+      // When it's ready to take over, show the update banner.
+      const showBanner = (waitingWorker) => {
+        const banner = document.getElementById('updateBanner');
+        const btn = document.getElementById('updateReloadBtn');
+        banner.classList.add('visible');
+        btn.onclick = () => {
+          waitingWorker.postMessage({ type: 'SKIP_WAITING' });
+        };
+      };
+
+      if (reg.waiting && navigator.serviceWorker.controller) {
+        showBanner(reg.waiting);
+      }
+
+      reg.addEventListener('updatefound', () => {
+        const newWorker = reg.installing;
+        if (!newWorker) return;
+        newWorker.addEventListener('statechange', () => {
+          if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+            showBanner(newWorker);
+          }
+        });
+      });
+    }).catch(() => {
+      // Offline support just won't be available this session; the app
+      // still works fine online via localStorage either way.
+    });
+
+    // Reload once the new worker takes control so the page picks up the
+    // updated app-shell files. Guard against reload loops on iOS.
+    let refreshing = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (refreshing) return;
+      refreshing = true;
+      window.location.reload();
+    });
+  });
+}
+
+</script>
+</body>
+</html>
