@@ -1,6 +1,6 @@
 // Bump this on every deploy that changes app-shell files so old caches
 // get cleaned up and clients pick up the new version.
-const CACHE_NAME = 'expenses-tracker-v8';
+const CACHE_NAME = 'expenses-tracker-v9';
 
 const APP_SHELL = [
   './',

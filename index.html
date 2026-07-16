@@ -804,6 +804,22 @@
     border: none;
   }
 
+  .modal-actions .confirm:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  .password-hint {
+    font-size: 11.5px;
+    margin: -8px 0 14px;
+    color: var(--text-faint);
+    min-height: 15px;
+  }
+
+  .password-hint.warn { color: var(--cat-utilities); }
+  .password-hint.bad { color: var(--danger); }
+  .password-hint.good { color: var(--cat-subscriptions); }
+
   /* Widget-style compact ticker when installed as a standalone PWA */
   @media (display-mode: standalone) {
     .header-row { margin-bottom: 20px; }
@@ -872,7 +888,7 @@
       <span class="num" id="monthlyTotal">$0.00</span>
       <span class="label">/ month</span>
     </div>
-    <div class="ticker-sub"><span class="num" id="annualTotal">$0.00</span> / year across <span class="num" id="itemCount">0</span> subscriptions</div>
+    <div class="ticker-sub"><span class="num" id="annualTotal">$0.00</span> / year across <span class="num" id="itemCount">0</span> expenses</div>
     <div class="category-breakdown" id="categoryBreakdown"></div>
   </div>
 
@@ -983,11 +999,17 @@
   <div class="modal">
     <h3 id="passwordTitle">Encryption password</h3>
     <p id="passwordDesc">This password protects your export. If you lose it, the file cannot be recovered.</p>
-    <input type="password" id="passwordInput" autocomplete="off" placeholder="Password">
-    <div class="modal-actions">
-      <button type="button" class="cancel" id="passwordCancel">Cancel</button>
-      <button type="button" class="confirm" id="passwordConfirm">Continue</button>
-    </div>
+    <!-- A real <form> with a submit event (not just a click-handled div) is
+         what Safari's save-password heuristics actually key off of — a JS
+         button click alone rarely triggers the "save this password?" prompt. -->
+    <form id="passwordForm" autocomplete="on">
+      <input type="password" id="passwordInput" name="expenses-tracker-password" placeholder="Password">
+      <p class="password-hint" id="passwordHint"></p>
+      <div class="modal-actions">
+        <button type="button" class="cancel" id="passwordCancel">Cancel</button>
+        <button type="submit" class="confirm" id="passwordConfirm">Continue</button>
+      </div>
+    </form>
   </div>
 </div>
 
@@ -1169,34 +1191,63 @@ function performUndo() {
 
 // Password modal — returns a Promise that resolves with the entered password
 // or null if cancelled. Cleaner UX than a native prompt() dialog.
-function askPassword(title, description) {
+//
+// mode: 'create' (new encrypted export — enforces min length + blocklist,
+//        sets autocomplete="new-password" so Safari offers to generate/save
+//        a strong password) or 'unlock' (decrypting an existing file — no
+//        strength gate, autocomplete="current-password" so Safari offers to
+//        fill a previously-saved one).
+function askPassword(title, description, mode) {
   return new Promise(resolve => {
     const modal = document.getElementById('passwordModal');
+    const form = document.getElementById('passwordForm');
     const input = document.getElementById('passwordInput');
+    const hint = document.getElementById('passwordHint');
+    const confirmBtn = document.getElementById('passwordConfirm');
+
     document.getElementById('passwordTitle').textContent = title;
     document.getElementById('passwordDesc').textContent = description;
     input.value = '';
+    input.setAttribute('autocomplete', mode === 'create' ? 'new-password' : 'current-password');
+
+    const updateHint = () => {
+      if (mode !== 'create') {
+        hint.textContent = '';
+        hint.className = 'password-hint';
+        confirmBtn.disabled = false;
+        return;
+      }
+      const check = checkPasswordStrength(input.value);
+      hint.textContent = check.message || `Use ${PASSWORD_MIN_LENGTH}+ characters — a short passphrase works well`;
+      hint.className = 'password-hint' + (check.level ? ` ${check.level}` : '');
+      confirmBtn.disabled = !check.ok;
+    };
+    updateHint();
+
     modal.classList.add('visible');
     setTimeout(() => input.focus(), 50);
 
     const cleanup = () => {
       modal.classList.remove('visible');
-      document.getElementById('passwordConfirm').removeEventListener('click', onConfirm);
+      form.removeEventListener('submit', onSubmit);
       document.getElementById('passwordCancel').removeEventListener('click', onCancel);
+      input.removeEventListener('input', updateHint);
       input.removeEventListener('keydown', onKey);
     };
-    const onConfirm = () => {
+    const onSubmit = (e) => {
+      e.preventDefault();  // Real submit event fires (good for Safari's save
+                            // heuristics) but we handle the result ourselves.
+      if (mode === 'create' && confirmBtn.disabled) return;
       const val = input.value;
       cleanup();
       resolve(val || null);
     };
     const onCancel = () => { cleanup(); resolve(null); };
-    const onKey = (e) => {
-      if (e.key === 'Enter') onConfirm();
-      else if (e.key === 'Escape') onCancel();
-    };
-    document.getElementById('passwordConfirm').addEventListener('click', onConfirm);
+    const onKey = (e) => { if (e.key === 'Escape') onCancel(); };
+
+    form.addEventListener('submit', onSubmit);
     document.getElementById('passwordCancel').addEventListener('click', onCancel);
+    input.addEventListener('input', updateHint);
     input.addEventListener('keydown', onKey);
   });
 }
@@ -1259,6 +1310,38 @@ function bundleAnalysisHtml(item) {
 
 const ENC_MAGIC = 'expenses-tracker-encrypted';
 const ENC_ITERATIONS = 250000;
+const PASSWORD_MIN_LENGTH = 12;
+
+// A short list of the most obviously weak choices — not a real dictionary
+// attack surface, just a cheap net to stop someone from satisfying the
+// length requirement with something like "aaaaaaaaaaaa" or a well-known
+// leaked password padded out. A real strength library is overkill for a
+// single-file app; this catches the obvious footguns at near-zero cost.
+const WEAK_PASSWORDS = new Set([
+  'password', 'password1', 'password123', '123456789012', 'qwertyuiop123',
+  'letmein12345', 'iloveyou1234', 'admin12345678', 'welcome123456',
+  'trustno1trustno1', '111111111111', '123123123123', 'abc123abc123',
+  '1234567890ab', 'qazwsxedc123', 'football1234', 'baseball1234',
+  'dragonball12', 'starwars1234', 'princess1234', 'sunshine1234',
+  'aaaaaaaaaaaa', 'zzzzzzzzzzzz', '000000000000', 'monkeymonkey',
+  'changeme1234', 'temppassword'
+]);
+
+// Only used for the "create a new encrypted export" flow — decrypting an
+// existing file should never be gated by these rules, since a backup made
+// before this check existed still needs to be openable with its real
+// (possibly shorter) password.
+function checkPasswordStrength(pw) {
+  if (pw.length === 0) return { ok: false, level: '', message: '' };
+  if (pw.length < PASSWORD_MIN_LENGTH) {
+    const remaining = PASSWORD_MIN_LENGTH - pw.length;
+    return { ok: false, level: 'warn', message: `${remaining} more character${remaining === 1 ? '' : 's'} needed` };
+  }
+  if (WEAK_PASSWORDS.has(pw.toLowerCase())) {
+    return { ok: false, level: 'bad', message: 'That\u2019s a common password — try something less predictable' };
+  }
+  return { ok: true, level: 'good', message: '\u2713 Looks good' };
+}
 
 function bufToB64(buf) {
   return btoa(String.fromCharCode(...new Uint8Array(buf)));
@@ -2039,7 +2122,8 @@ document.getElementById('importFile').addEventListener('change', async (e) => {
         if (isEncryptedEnvelope(maybeEnvelope)) {
           const password = await askPassword(
             'Encrypted backup',
-            'Enter the password used when this file was exported.'
+            'Enter the password used when this file was exported.',
+            'unlock'
           );
           if (!password) { setStatus('Import cancelled'); e.target.value = ''; return; }
           setStatus('Decrypting…');
@@ -2135,7 +2219,8 @@ document.getElementById('exportEncBtn').addEventListener('click', async () => {
   if (items.length === 0) { setStatus('Nothing to export yet'); return; }
   const password = await askPassword(
     'Encrypt export',
-    'Choose a password to protect this backup. Save it somewhere safe — a lost password means the backup cannot be recovered.'
+    'Choose a password to protect this backup. If Safari offers to save it in Passwords, that\u2019s the easiest way to keep track of it \u2014 there\u2019s no way to recover a lost password.',
+    'create'
   );
   if (!password) return;
   setStatus('Encrypting…');
