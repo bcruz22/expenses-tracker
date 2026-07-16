@@ -37,6 +37,7 @@
     --cat-streaming: #00B2A9;
     --cat-software: #702082;
     --cat-utilities: #D86018;
+    --cat-insurance: #2F65A7;
     --cat-fitness: #E01F7C;
     --cat-subscriptions: #A5A508;
     --cat-other: #989C97;
@@ -325,7 +326,77 @@
     gap: 10px;
     padding-top: 6px;
     border-top: 1px dashed var(--border);
+    flex-wrap: wrap;
   }
+
+  .inline-parent-select,
+  .inline-trial-label {
+    flex-shrink: 0;
+    font-size: 12.5px;
+    color: var(--text-muted);
+    font-family: inherit;
+  }
+
+  .inline-parent-select {
+    background: transparent;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    color-scheme: var(--scheme);
+    max-width: 160px;
+  }
+
+  .inline-parent-select:disabled {
+    cursor: not-allowed;
+    color: var(--text-faint);
+  }
+
+  .inline-trial-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .inline-trial-label input[type="checkbox"] {
+    width: auto;
+    margin: 0;
+    accent-color: var(--danger);
+  }
+
+  /* Standalone cost row on bundle children */
+  .standalone-row {
+    display: block;
+    font-size: 10.5px;
+    font-weight: 500;
+    color: var(--text-faint);
+    margin-top: 2px;
+    white-space: nowrap;
+  }
+
+  .standalone-row input {
+    width: 60px;
+    font-size: 10.5px;
+    padding: 1px 4px;
+    background: transparent;
+    border: 1px dashed var(--border);
+    text-align: right;
+    color: var(--text-muted);
+    font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  }
+
+  /* Bundle analysis on parent items — the "save vs standalone" line */
+  .bundle-analysis {
+    display: block;
+    font-size: 10.5px;
+    font-weight: 600;
+    margin-top: 2px;
+  }
+
+  .bundle-analysis.save { color: var(--cat-subscriptions); }  /* green — good deal */
+  .bundle-analysis.overpay { color: var(--cat-utilities); }   /* orange — bad deal */
+  .bundle-analysis.even { color: var(--text-faint); }
 
   .date-input {
     flex-shrink: 0;
@@ -734,7 +805,7 @@
   </div>
 
   <div class="section" id="upcomingSection" style="display:none;">
-    <p class="section-title">Renewing soon</p>
+    <p class="section-title">Due soon</p>
     <div class="upcoming-list" id="upcomingList"></div>
   </div>
 
@@ -756,6 +827,7 @@
           <option>Streaming</option>
           <option>Software</option>
           <option>Utilities</option>
+          <option>Insurance</option>
           <option>Fitness</option>
           <option>Subscriptions</option>
           <option>Other</option>
@@ -773,7 +845,7 @@
         </select>
       </div>
       <div class="field">
-        <label for="fRenewal">Renews (optional)</label>
+        <label for="fRenewal">Due (optional)</label>
         <input id="fRenewal" type="date">
       </div>
       <button type="submit" class="btn-primary">Add expense</button>
@@ -803,7 +875,7 @@
         <option value="cost-desc">Sort: Cost (high to low)</option>
         <option value="cost-asc">Sort: Cost (low to high)</option>
         <option value="name">Sort: Name (A–Z)</option>
-        <option value="renewal">Sort: Renewal date</option>
+        <option value="renewal">Sort: Due date</option>
       </select>
     </div>
     <div class="items" id="itemsList"></div>
@@ -848,6 +920,7 @@ const CATEGORIES = {
   Streaming: 'var(--cat-streaming)',
   Software: 'var(--cat-software)',
   Utilities: 'var(--cat-utilities)',
+  Insurance: 'var(--cat-insurance)',
   Fitness: 'var(--cat-fitness)',
   Subscriptions: 'var(--cat-subscriptions)',
   Other: 'var(--cat-other)'
@@ -860,7 +933,7 @@ const QUICK_STREAMING = [
 
 const STORAGE_KEY = 'recurring-expenses-list';
 const THEME_KEY = 'recurring-expenses-theme';
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 let items = [];
 let lastDeleted = null;      // For undo-delete
 let undoTimer = null;
@@ -879,7 +952,11 @@ function normalizeItem(item) {
     renewalDate: item.renewalDate || '',
     priceHistory: Array.isArray(item.priceHistory) ? item.priceHistory : [],
     parentId: item.parentId || '',
-    isTrial: !!item.isTrial
+    isTrial: !!item.isTrial,
+    // Standalone cost = what this service would cost outside its bundle.
+    // Only meaningful for bundle children; ignored otherwise. Used to compute
+    // whether a bundle is actually saving money vs paying for each piece.
+    standaloneCost: typeof item.standaloneCost === 'number' ? item.standaloneCost : (parseFloat(item.standaloneCost) || 0)
   };
 }
 
@@ -1020,6 +1097,49 @@ function monthlyEquiv(item) {
 
 function annualEquiv(item) {
   return item.cycle === 'annual' ? item.cost : item.cost * 12;
+}
+
+// True if any other item has this one as its bundle parent.
+function hasChildren(item) {
+  return items.some(k => k.parentId === item.id);
+}
+
+// Compute the "bundle vs standalone" comparison for a parent item.
+// Returns null if the item has no children (nothing to analyze).
+// savings > 0 means the bundle is cheaper than paying standalone; < 0 means
+// unbundling would be cheaper. Only monthly-equivalents are compared.
+function bundleAnalysis(parent) {
+  const children = items.filter(k => k.parentId === parent.id);
+  if (children.length === 0) return null;
+  const bundleMonthly = monthlyEquiv(parent);
+  // Sum each child's standalone monthly cost. If a child has no standalone
+  // cost set, we can't infer it, so skip it — but flag that the number is
+  // partial so we don't overstate the comparison.
+  let standaloneSum = 0;
+  let missing = 0;
+  children.forEach(c => {
+    if (c.standaloneCost > 0) {
+      const monthly = c.cycle === 'annual' ? c.standaloneCost / 12 : c.standaloneCost;
+      standaloneSum += monthly;
+    } else {
+      missing++;
+    }
+  });
+  const savings = standaloneSum - bundleMonthly;
+  return { bundleMonthly, standaloneSum, savings, childCount: children.length, missing };
+}
+
+function bundleAnalysisHtml(item) {
+  const a = bundleAnalysis(item);
+  if (!a) return '';
+  if (a.standaloneSum === 0) return '';
+  const absSavings = Math.abs(a.savings).toFixed(2);
+  let cls, label;
+  if (a.savings > 0.5) { cls = 'save'; label = `Save $${absSavings}/mo vs standalone`; }
+  else if (a.savings < -0.5) { cls = 'overpay'; label = `Overpay $${absSavings}/mo vs standalone`; }
+  else { cls = 'even'; label = `Break-even vs standalone`; }
+  const partial = a.missing > 0 ? ` <span title="${a.missing} bundled item(s) have no standalone cost set — this number is partial">·</span>` : '';
+  return `<span class="bundle-analysis ${cls}">${label}${partial}</span>`;
 }
 
 // --- Encryption helpers ---
@@ -1330,12 +1450,36 @@ function renderItems() {
 
     const cycleTag = item.cycle === 'annual' ? `<span class="cycle-tag">/yr → ${money(monthlyEquiv(item))}/mo</span>` : '<span class="cycle-tag">/mo</span>';
     const trialBadge = item.isTrial ? '<span class="trial-badge">TRIAL</span>' : '';
-    const hasChildren = items.some(k => k.parentId === item.id);
-    const bundleBadge = hasChildren ? '<span class="bundle-badge">Bundle</span>' : '';
+    const isBundleParent = hasChildren(item);
+    const bundleBadge = isBundleParent ? '<span class="bundle-badge">Bundle</span>' : '';
 
     const catOptions = Object.keys(CATEGORIES).map(c =>
       `<option value="${c}"${c === item.category ? ' selected' : ''}>${c}</option>`
     ).join('');
+
+    // Build the inline "part of bundle" dropdown. Options are:
+    // - "Standalone" (parentId = '')
+    // - Every other top-level item (i.e. items with no parent themselves)
+    // If this item has children of its own, it can't be a child (flat-bundle
+    // rule), so we disable the select and explain why in the tooltip.
+    const parentSelectOptions = ['<option value="">— Standalone —</option>'];
+    items
+      .filter(other => other.id !== item.id && !other.parentId)
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .forEach(other => {
+        const selected = other.id === item.parentId ? ' selected' : '';
+        parentSelectOptions.push(`<option value="${attr(other.id)}"${selected}>${escapeHtml(other.name)}</option>`);
+      });
+    const parentDisabledAttr = isBundleParent
+      ? ' disabled title="This item has children in its bundle. Remove them first before making it a child of another item."'
+      : '';
+
+    // Standalone cost input, only for bundle children (has parentId).
+    // For standalone items and bundle parents, hide this — it's only useful
+    // to know "what would this cost if I unbundled it from the parent."
+    const standaloneRow = item.parentId
+      ? `<span class="standalone-row" title="What this would cost outside the bundle">Standalone: <input type="number" step="0.01" min="0" value="${item.standaloneCost || 0}" data-standalone-for="${attr(item.id)}" class="num" aria-label="Standalone cost"></span>`
+      : '';
 
     row.innerHTML = `
       <div class="item-top">
@@ -1346,12 +1490,16 @@ function renderItems() {
           <input class="cost-edit num" type="number" step="0.01" min="0" value="${item.cost}" data-cost-for="${attr(item.id)}">
           ${cycleTag}
           ${priceDeltaHtml(item)}
+          ${standaloneRow}
+          ${bundleAnalysisHtml(item)}
         </div>
         <button class="item-del" title="Remove" data-del="${attr(item.id)}">✕</button>
       </div>
       <div class="item-meta">
-        <input class="date-input" type="date" value="${attr(item.renewalDate || '')}" data-renewal-for="${attr(item.id)}" title="Next renewal date">
+        <input class="date-input" type="date" value="${attr(item.renewalDate || '')}" data-renewal-for="${attr(item.id)}" title="Next due date">
         ${renewalBadgeHtml(item)}
+        <select class="inline-parent-select" data-parent-for="${attr(item.id)}" aria-label="Bundle assignment"${parentDisabledAttr}>${parentSelectOptions.join('')}</select>
+        <label class="inline-trial-label"><input type="checkbox" data-trial-for="${attr(item.id)}"${item.isTrial ? ' checked' : ''}>Trial</label>
         <input class="note-input" type="text" placeholder="Add a note…" value="${attr(item.note || '')}" data-note-for="${attr(item.id)}">
       </div>
     `;
@@ -1371,6 +1519,18 @@ function renderItems() {
     });
   });
 
+  list.querySelectorAll('[data-standalone-for]').forEach(input => {
+    input.addEventListener('change', (e) => {
+      const id = e.target.getAttribute('data-standalone-for');
+      const item = items.find(i => i.id === id);
+      if (item) {
+        item.standaloneCost = parseFloat(e.target.value) || 0;
+        renderAll();  // Re-render so bundle analysis on parent updates
+        saveItems();
+      }
+    });
+  });
+
   list.querySelectorAll('[data-cat-for]').forEach(select => {
     select.addEventListener('change', (e) => {
       const id = e.target.getAttribute('data-cat-for');
@@ -1379,6 +1539,35 @@ function renderItems() {
         item.category = e.target.value;
         renderAll();
         saveItems();
+      }
+    });
+  });
+
+  list.querySelectorAll('[data-parent-for]').forEach(select => {
+    select.addEventListener('change', (e) => {
+      const id = e.target.getAttribute('data-parent-for');
+      const item = items.find(i => i.id === id);
+      if (!item) return;
+      const newParent = e.target.value;
+      // Guard against user selecting themselves (shouldn't be in options,
+      // but defense in depth).
+      if (newParent === item.id) return;
+      item.parentId = newParent;
+      renderAll();
+      saveItems();
+      haptic(4);
+    });
+  });
+
+  list.querySelectorAll('[data-trial-for]').forEach(input => {
+    input.addEventListener('change', (e) => {
+      const id = e.target.getAttribute('data-trial-for');
+      const item = items.find(i => i.id === id);
+      if (item) {
+        item.isTrial = e.target.checked;
+        renderAll();
+        saveItems();
+        haptic(4);
       }
     });
   });
@@ -1493,15 +1682,21 @@ function csvEscape(val) {
 }
 
 function toCSV(list) {
-  const headers = ['Name', 'Category', 'Cost', 'Billing Cycle', 'Monthly Equivalent', 'Annual Equivalent', 'Renewal Date', 'Notes'];
+  const headers = ['Name', 'Category', 'Cost', 'Standalone Cost', 'Billing Cycle', 'Monthly Equivalent', 'Annual Equivalent', 'Due Date', 'Bundle Parent', 'Is Trial', 'Notes'];
+  // Build a lookup so we can export the parent's NAME (human-readable),
+  // not the internal UUID. On import we re-resolve back to an id.
+  const idToName = new Map(list.map(i => [i.id, i.name]));
   const rows = list.map(i => [
     i.name,
     i.category,
     i.cost.toFixed(2),
+    (i.standaloneCost || 0).toFixed(2),
     i.cycle,
     monthlyEquiv(i).toFixed(2),
     annualEquiv(i).toFixed(2),
     i.renewalDate || '',
+    i.parentId ? (idToName.get(i.parentId) || '') : '',
+    i.isTrial ? 'yes' : '',
     i.note || ''
   ]);
   return [headers, ...rows].map(r => r.map(csvEscape).join(',')).join('\n');
@@ -1520,9 +1715,23 @@ function downloadFile(content, filename, mime) {
 }
 
 // iOS 15+ supports sharing files via the native share sheet, which is a
-// nicer experience than Safari's Downloads folder. Fall back cleanly if
-// unsupported (older iOS, desktop browsers) or if the user cancels.
+// nicer experience than Safari's Downloads folder. But desktop browsers
+// (Chrome, macOS Safari 16.4+) have started implementing Web Share too,
+// which pops a mobile-style sheet that's a worse fit than a direct download
+// on a desktop. Detect mobile before choosing which path to take.
+function isMobileDevice() {
+  return /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
+    || (navigator.maxTouchPoints > 1 && /Mac/i.test(navigator.platform));
+}
+
 async function shareOrDownload(content, filename, mime) {
+  // Desktop → straight download to the Downloads folder. Users on desktop
+  // expect this and can move to iCloud Drive / OneDrive / etc. themselves.
+  if (!isMobileDevice()) {
+    downloadFile(content, filename, mime);
+    return 'downloaded';
+  }
+  // Mobile → try the native share sheet so "Save to Files" is one tap away.
   try {
     const file = new File([content], filename, { type: mime });
     if (navigator.canShare && navigator.canShare({ files: [file] })) {
@@ -1584,10 +1793,13 @@ function csvToItems(text) {
   const nameIdx = idx('name', 'service', 'expense');
   const catIdx = idx('category');
   const costIdx = idx('cost', 'amount', 'price');
+  const standaloneIdx = idx('standalone cost', 'standalone', 'unbundled cost');
   const cycleIdx = idx('billing cycle', 'cycle', 'frequency', 'billed');
   const monthlyIdx = idx('monthly equivalent', 'monthly');
   const annualIdx = idx('annual equivalent', 'annual', 'yearly');
-  const renewalIdx = idx('renewal date', 'renews', 'next renewal', 'renewal');
+  const renewalIdx = idx('due date', 'due', 'renewal date', 'renews', 'next renewal', 'renewal');
+  const parentIdx = idx('bundle parent', 'parent', 'part of bundle');
+  const trialIdx = idx('is trial', 'trial', 'free trial');
   const noteIdx = idx('notes', 'note');
 
   const result = [];
@@ -1614,9 +1826,15 @@ function csvToItems(text) {
       cycle = cycle || 'monthly';
     }
 
+    const standaloneCost = standaloneIdx !== -1 ? (parseFloat(row[standaloneIdx]) || 0) : 0;
     const note = noteIdx !== -1 ? (row[noteIdx] || '').trim() : '';
     const renewalDate = renewalIdx !== -1 ? (row[renewalIdx] || '').trim() : '';
-    result.push({ name, category, cost, cycle, note, renewalDate });
+    // Parent is exported as a NAME (not internal id); we resolve to id after
+    // all rows are parsed so forward references work.
+    const parentName = parentIdx !== -1 ? (row[parentIdx] || '').trim() : '';
+    const trialRaw = trialIdx !== -1 ? (row[trialIdx] || '').trim().toLowerCase() : '';
+    const isTrial = /^(yes|true|y|1|trial)$/.test(trialRaw);
+    result.push({ name, category, cost, cycle, note, renewalDate, standaloneCost, parentName, isTrial });
   }
   return result;
 }
@@ -1632,11 +1850,12 @@ function jsonToItems(text) {
     const category = normalizeCategory((entry.category || 'Other').toString().trim());
     const cycle = normalizeCycle((entry.cycle || entry.billingCycle || entry.frequency || 'monthly').toString());
     const cost = parseFloat(entry.cost ?? entry.amount ?? entry.price ?? 0) || 0;
+    const standaloneCost = parseFloat(entry.standaloneCost ?? entry.standalone_cost ?? 0) || 0;
     const note = (entry.note || entry.notes || '').toString();
-    const renewalDate = (entry.renewalDate || entry.renewal_date || entry.renewsOn || '').toString();
+    const renewalDate = (entry.dueDate || entry.due_date || entry.renewalDate || entry.renewal_date || entry.renewsOn || '').toString();
     const parentId = (entry.parentId || '').toString();
     const isTrial = !!entry.isTrial;
-    result.push({ name, category, cost, cycle, note, renewalDate, parentId, isTrial });
+    result.push({ name, category, cost, cycle, note, renewalDate, parentId, isTrial, standaloneCost });
   });
   return result;
 }
@@ -1645,6 +1864,19 @@ function jsonToItems(text) {
 // rows in place instead of creating duplicates; anything new gets appended.
 function mergeImportedItems(parsed) {
   let added = 0, updated = 0;
+  // First pass: resolve CSV parent references (which come in as parentName)
+  // to a parentId. We do this against the CURRENT items list plus any items
+  // we're about to add in this same import. Name match is case-insensitive.
+  parsed.forEach(p => {
+    if (p.parentName && !p.parentId) {
+      const inCurrent = items.find(i => i.name.toLowerCase() === p.parentName.toLowerCase() && !i.parentId);
+      if (inCurrent) {
+        p.parentId = inCurrent.id;
+      }
+      // If not found in current, it'll get resolved after we add new items below
+    }
+  });
+
   parsed.forEach(p => {
     const match = items.find(i => i.name.toLowerCase() === p.name.toLowerCase() && i.category === p.category);
     if (match) {
@@ -1654,12 +1886,24 @@ function mergeImportedItems(parsed) {
       if (p.renewalDate) match.renewalDate = p.renewalDate;
       if (p.parentId !== undefined && p.parentId !== '') match.parentId = p.parentId;
       if (p.isTrial !== undefined) match.isTrial = p.isTrial;
+      if (p.standaloneCost > 0) match.standaloneCost = p.standaloneCost;
       updated++;
     } else {
       items.push(normalizeItem(p));
       added++;
     }
   });
+
+  // Second pass: resolve any parentName references that couldn't be resolved
+  // above because the parent was in the same import batch (forward reference).
+  parsed.forEach(p => {
+    if (p.parentName && !p.parentId) {
+      const target = items.find(i => i.name.toLowerCase() === p.name.toLowerCase() && i.category === p.category);
+      const parent = items.find(i => i.name.toLowerCase() === p.parentName.toLowerCase() && !i.parentId);
+      if (target && parent && target.id !== parent.id) target.parentId = parent.id;
+    }
+  });
+
   return { added, updated };
 }
 
