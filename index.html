@@ -154,32 +154,54 @@
 
   .ticker-sub .num { color: var(--text); font-weight: 500; }
 
-  .spend-bar {
-    height: 8px;
-    border-radius: 4px;
-    overflow: hidden;
+  /* Category breakdown — one row per category with its own bar, so a large
+     category (e.g. Insurance/mortgage) doesn't crush the others down to
+     illegible slivers the way a single stacked bar did. */
+  .category-breakdown {
     display: flex;
-    background: var(--surface-2);
-    margin-bottom: 14px;
+    flex-direction: column;
+    gap: 8px;
   }
 
-  .spend-bar div {
-    height: 100%;
-    transition: width 0.4s ease;
-  }
-
-  .legend {
+  .category-row {
     display: flex;
-    flex-wrap: wrap;
-    gap: 14px;
+    align-items: center;
+    gap: 10px;
   }
 
-  .legend-item {
+  .category-row .cat-label {
     display: flex;
     align-items: center;
     gap: 6px;
-    font-size: 12.5px;
+    width: 112px;
+    flex-shrink: 0;
+    font-size: 12px;
     color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .category-row .cat-track {
+    flex: 1;
+    height: 6px;
+    background: var(--surface-2);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+
+  .category-row .cat-fill {
+    height: 100%;
+    border-radius: 3px;
+    transition: width 0.4s ease;
+  }
+
+  .category-row .cat-amount {
+    flex-shrink: 0;
+    width: 76px;
+    text-align: right;
+    font-size: 12px;
+    font-weight: 600;
   }
 
   .dot {
@@ -581,16 +603,26 @@
     cursor: pointer;
   }
 
-  /* Header row: title on left, theme toggle on right */
+  /* Header row: title on left, toggles on right; wraps on narrow screens
+     since two segmented-toggle groups plus a title don't fit one line
+     below ~380px viewports. */
   .header-row {
     display: flex;
     align-items: center;
     justify-content: space-between;
+    flex-wrap: wrap;
     gap: 12px;
+    row-gap: 10px;
     margin-bottom: 28px;
   }
 
   .header-row h1 { margin: 0; }
+
+  .toggle-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
 
   .theme-toggle {
     display: flex;
@@ -780,6 +812,40 @@
     .ticker-main .label { font-size: 14px; }
     .eyebrow { display: none; }
   }
+
+  /* Compact mode — combines tighter spacing throughout with a per-item
+     collapsible meta row (date/bundle/trial/note), tapped open on demand
+     rather than always showing. Toggled via the header Density control;
+     "Auto" ties it to the same <640px breakpoint as the mobile form layout. */
+  .toggle-meta {
+    display: none;
+    background: none;
+    border: none;
+    color: var(--text-faint);
+    font-size: 11px;
+    cursor: pointer;
+    padding: 6px 8px;
+    margin-right: 4px;
+    flex-shrink: 0;
+    /* Visual separation from the delete button so a tap meant to expand
+       details doesn't land on delete instead — small but real risk once
+       two tiny buttons sit 8px apart in compact mode. */
+    border-right: 1px solid var(--border);
+  }
+
+  body.compact .toggle-meta { display: inline-flex; }
+  body.compact .item-meta { display: none; }
+  body.compact .item-meta.expanded { display: flex; }
+  body.compact .item-del { margin-left: 4px; }
+
+  body.compact .items { gap: 4px; }
+  body.compact .item { padding: 7px 10px; }
+  body.compact .item-top { gap: 8px; }
+  body.compact .section { margin-bottom: 16px; }
+  body.compact .ticker { padding: 16px 18px 14px; }
+  body.compact .ticker-main .num { font-size: 32px; }
+  body.compact .ticker-sub { margin-bottom: 10px; }
+  body.compact .add-form { padding: 12px; gap: 8px; }
 </style>
 </head>
 <body>
@@ -787,10 +853,17 @@
   <p class="eyebrow">Tracker</p>
   <div class="header-row">
     <h1>Monthly Recurring Expenses</h1>
-    <div class="theme-toggle" role="group" aria-label="Theme">
-      <button type="button" data-theme-choice="auto" title="Follow system">Auto</button>
-      <button type="button" data-theme-choice="light" title="Light">Light</button>
-      <button type="button" data-theme-choice="dark" title="Dark">Dark</button>
+    <div class="toggle-group">
+      <div class="theme-toggle" role="group" aria-label="Theme">
+        <button type="button" data-theme-choice="auto" title="Follow system">Auto</button>
+        <button type="button" data-theme-choice="light" title="Light">Light</button>
+        <button type="button" data-theme-choice="dark" title="Dark">Dark</button>
+      </div>
+      <div class="theme-toggle" role="group" aria-label="Density">
+        <button type="button" data-compact-choice="auto" title="Compact on small screens">Auto</button>
+        <button type="button" data-compact-choice="on" title="Always compact">Compact</button>
+        <button type="button" data-compact-choice="off" title="Always full">Full</button>
+      </div>
     </div>
   </div>
 
@@ -800,8 +873,7 @@
       <span class="label">/ month</span>
     </div>
     <div class="ticker-sub"><span class="num" id="annualTotal">$0.00</span> / year across <span class="num" id="itemCount">0</span> subscriptions</div>
-    <div class="spend-bar" id="spendBar"></div>
-    <div class="legend" id="legend"></div>
+    <div class="category-breakdown" id="categoryBreakdown"></div>
   </div>
 
   <div class="section" id="upcomingSection" style="display:none;">
@@ -858,6 +930,10 @@
         <select id="fParent">
           <option value="">— Standalone —</option>
         </select>
+      </div>
+      <div class="field" style="grid-column: span 2;">
+        <label for="fStandalone">Standalone cost (if bundled)</label>
+        <input id="fStandalone" type="number" step="0.01" min="0" placeholder="0.00">
       </div>
       <div class="field" style="grid-column: span 2; display:flex; align-items:center; gap:6px; padding-bottom:8px;">
         <input id="fTrial" type="checkbox" style="width:auto; margin:0;">
@@ -1022,6 +1098,40 @@ function initTheme() {
   // If we're on auto and the OS toggles, keep the meta tag in sync
   window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', () => {
     if ((localStorage.getItem(THEME_KEY) || 'auto') === 'auto') applyTheme('auto');
+  });
+}
+
+const COMPACT_KEY = 'recurring-expenses-compact';
+const COMPACT_BREAKPOINT = '(max-width: 640px)';
+
+// Ephemeral (not persisted) — which item rows have their meta row expanded
+// while in compact mode. Resets on reload, which is fine; it's a viewing
+// convenience, not data.
+let expandedIds = new Set();
+
+function applyCompact(choice) {
+  let isCompact;
+  if (choice === 'on') isCompact = true;
+  else if (choice === 'off') isCompact = false;
+  else isCompact = window.matchMedia(COMPACT_BREAKPOINT).matches; // auto
+  document.body.classList.toggle('compact', isCompact);
+  document.querySelectorAll('[data-compact-choice]').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.compactChoice === choice);
+  });
+}
+
+function initCompact() {
+  const stored = localStorage.getItem(COMPACT_KEY) || 'auto';
+  applyCompact(stored);
+  document.querySelectorAll('[data-compact-choice]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const choice = btn.dataset.compactChoice;
+      localStorage.setItem(COMPACT_KEY, choice);
+      applyCompact(choice);
+    });
+  });
+  window.matchMedia(COMPACT_BREAKPOINT).addEventListener('change', () => {
+    if ((localStorage.getItem(COMPACT_KEY) || 'auto') === 'auto') applyCompact('auto');
   });
 }
 
@@ -1347,35 +1457,27 @@ function renderTicker() {
   const byCat = {};
   items.forEach(i => { byCat[i.category] = (byCat[i.category] || 0) + monthlyEquiv(i); });
 
-  const knownOrder = Object.keys(CATEGORIES);
-  const catKeys = Object.keys(byCat).sort((a, b) => {
-    const ai = knownOrder.indexOf(a), bi = knownOrder.indexOf(b);
-    if (ai !== -1 && bi !== -1) return ai - bi;
-    if (ai !== -1) return -1;
-    if (bi !== -1) return 1;
-    return a.localeCompare(b);
-  });
+  // Largest spend first — this is a "what's costing me the most" view, not
+  // a fixed taxonomy list, so ranking by dollars is more useful than a
+  // stable alphabetical/preset order.
+  const entries = Object.entries(byCat)
+    .filter(([, val]) => val > 0)
+    .sort((a, b) => b[1] - a[1]);
 
-  const bar = document.getElementById('spendBar');
-  bar.innerHTML = '';
-  const legend = document.getElementById('legend');
-  legend.innerHTML = '';
+  const container = document.getElementById('categoryBreakdown');
+  container.innerHTML = '';
 
-  catKeys.forEach(cat => {
-    const val = byCat[cat];
-    if (val <= 0) return;
+  entries.forEach(([cat, val]) => {
     const color = CATEGORIES[cat] || CATEGORIES.Other;
     const pct = monthly > 0 ? (val / monthly) * 100 : 0;
-    const seg = document.createElement('div');
-    seg.style.width = pct + '%';
-    seg.style.background = color;
-    seg.title = `${cat}: ${money(val)}/mo`;
-    bar.appendChild(seg);
-
-    const li = document.createElement('div');
-    li.className = 'legend-item';
-    li.innerHTML = `<span class="dot" style="background:${color}"></span>${escapeHtml(cat)} · ${money(val)}`;
-    legend.appendChild(li);
+    const row = document.createElement('div');
+    row.className = 'category-row';
+    row.innerHTML = `
+      <span class="cat-label" title="${escapeHtml(cat)}"><span class="dot" style="background:${color}"></span>${escapeHtml(cat)}</span>
+      <span class="cat-track"><span class="cat-fill" style="width:${pct.toFixed(1)}%; background:${color};"></span></span>
+      <span class="cat-amount num">${money(val)}</span>
+    `;
+    container.appendChild(row);
   });
 }
 
@@ -1493,9 +1595,10 @@ function renderItems() {
           ${standaloneRow}
           ${bundleAnalysisHtml(item)}
         </div>
+        <button class="toggle-meta" data-toggle-meta="${attr(item.id)}" title="${expandedIds.has(item.id) ? 'Hide' : 'Show'} details" aria-label="${expandedIds.has(item.id) ? 'Hide' : 'Show'} details for ${attr(item.name)}" aria-expanded="${expandedIds.has(item.id) ? 'true' : 'false'}">${expandedIds.has(item.id) ? '▾' : '▸'}</button>
         <button class="item-del" title="Remove" data-del="${attr(item.id)}">✕</button>
       </div>
-      <div class="item-meta">
+      <div class="item-meta${expandedIds.has(item.id) ? ' expanded' : ''}">
         <input class="date-input" type="date" value="${attr(item.renewalDate || '')}" data-renewal-for="${attr(item.id)}" title="Next due date">
         ${renewalBadgeHtml(item)}
         <select class="inline-parent-select" data-parent-for="${attr(item.id)}" aria-label="Bundle assignment"${parentDisabledAttr}>${parentSelectOptions.join('')}</select>
@@ -1504,6 +1607,15 @@ function renderItems() {
       </div>
     `;
     list.appendChild(row);
+  });
+
+  list.querySelectorAll('[data-toggle-meta]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      const id = e.target.getAttribute('data-toggle-meta');
+      if (expandedIds.has(id)) expandedIds.delete(id);
+      else expandedIds.add(id);
+      renderItems();  // Only the list needs to re-render; totals are unaffected.
+    });
   });
 
   list.querySelectorAll('[data-cost-for]').forEach(input => {
@@ -1983,6 +2095,7 @@ document.getElementById('addForm').addEventListener('submit', (e) => {
   const note = document.getElementById('fNotes').value.trim();
   const renewalDate = document.getElementById('fRenewal').value;
   const parentId = document.getElementById('fParent').value;
+  const standaloneCost = parseFloat(document.getElementById('fStandalone').value) || 0;
   const isTrial = document.getElementById('fTrial').checked;
   if (!name) return;
 
@@ -1996,7 +2109,7 @@ document.getElementById('addForm').addEventListener('submit', (e) => {
     }
   }
 
-  items.push(normalizeItem({ name, category, cost, cycle, note, renewalDate, parentId, isTrial }));
+  items.push(normalizeItem({ name, category, cost, cycle, note, renewalDate, parentId, isTrial, standaloneCost }));
   e.target.reset();
   document.getElementById('fName').focus();
   renderAll();
@@ -2040,6 +2153,7 @@ document.getElementById('exportEncBtn').addEventListener('click', async () => {
 
 (async function init() {
   initTheme();
+  initCompact();
   setStatus('Loading…');
   items = await loadItems();
   setStatus('');

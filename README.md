@@ -11,12 +11,13 @@ A small, on-device tracker for monthly and annual expenses. Runs as an installab
 ## What it does
 
 - Track recurring monthly or annual expenses across categories (Streaming, Software, Utilities, Insurance, Fitness, Subscriptions, Other)
-- See total monthly and annual spend at a glance
+- See total monthly and annual spend at a glance, broken down per category with its own bar, so one large category (e.g. mortgage under Insurance) never crowds out the rest
 - Get flagged on expenses coming due in the next 14 days, with free trials floating to the top
 - Group items into bundles (e.g. Xfinity bundle covering Disney+ and Hulu). Assign, move, or unbundle any item inline from its row.
 - **Bundle savings analysis:** for bundle children, set their standalone cost (what they'd cost outside the bundle). The parent then shows whether the bundle is saving you money or overpaying vs paying for each piece separately.
 - Track price changes over time — see a delta indicator when a subscription cost goes up or down
 - Search and sort as the list grows
+- **Compact mode:** condenses each row's detail (due date, bundle, trial, notes) behind a tap-to-expand toggle, plus tighter spacing throughout. Auto-enables under 640px, or force it on/off from the header.
 - Export as CSV, plaintext JSON, or password-encrypted JSON; import any of these back later
 - Follows system light/dark preference, with a manual override
 - Works offline once installed
